@@ -84,4 +84,53 @@ class NearestGolfersController extends Controller
     {
         //
     }
+
+    public function csv(Request $request): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $request->validate([
+            'latitude' => 'required|numeric',
+            'longitude' => 'required|numeric',
+        ]);
+        $latitude = $request->get('latitude');
+        $longitude = $request->get('longitude');
+
+        $golfers = Golfer::selectRaw(
+            '*,
+            (6371 * acos(
+                cos(radians(?)) * cos(radians(latitude)) *
+                cos(radians(longitude) - radians(?)) +
+                sin(radians(?)) * sin(radians(latitude))
+            )) AS distance',
+            [$latitude, $longitude, $latitude]
+        )
+            ->orderBy('distance')
+            ->limit(500)
+            ->get();
+
+        $headers = [
+            'Content-type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename=golfers.csv',
+        ];
+
+        $callback = function () use ($golfers) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, [
+                'debitor_account', 'name', 'email', 'born_at', 'latitude', 'longitude', 'distance'
+            ]);
+            foreach ($golfers as $golfer) {
+                fputcsv($file, [
+                    $golfer->debitor_account,
+                    $golfer->name,
+                    $golfer->email,
+                    $golfer->born_at,
+                    $golfer->latitude,
+                    $golfer->longitude,
+                    $golfer->distance,
+                ]);
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
 }
